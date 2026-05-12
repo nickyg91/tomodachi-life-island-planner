@@ -1,3 +1,4 @@
+// types/island.ts
 export enum ItemType {
   House = 'house',
   Restaurant = 'restaurant',
@@ -11,6 +12,27 @@ export enum ItemType {
   Tree = 'tree',
   Decor = 'decor',
 }
+
+export interface PlannerItem {
+  id: string;
+  type: ItemType;
+  variant: string;
+  rotation: 0 | 90 | 180 | 270;
+  x: number;
+  y: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface PlannerState {
+  gridSize: { w: number; h: number };
+  items: PlannerItem[];
+  camera: { x: number; y: number; scale: number };
+  history: { past: PlannerState[]; future: PlannerState[]; maxSteps: number };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Planner Configuration Constants (for palette & UI logic)
+// ─────────────────────────────────────────────────────────────
 
 export type ItemCategory =
   | 'Residential'
@@ -49,15 +71,4 @@ export const VARIANT_OPTIONS: Partial<Record<ItemType, string[]>> = {
   [ItemType.Decor]: ['bench', 'lantern', 'planter', 'fountain'],
 } as const;
 
-export interface IslandItem {
-  id: string;
-  type: ItemType;
-  variant: string;
-  rotation: 0 | 90 | 180 | 270;
-  x: number;
-  y: number;
-  metadata?: Record<string, unknown>;
-}
-
-// Helper to get all item types as an array (useful for palette generation)
 export const ALL_ITEM_TYPES = Object.values(ItemType) as ItemType[];
