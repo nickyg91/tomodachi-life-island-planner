@@ -1,7 +1,11 @@
-<script setup lang="ts"></script>
+<script setup lang="ts">
+import PalletteAside from './components/Editor/PalletteAside.vue';
+</script>
 
 <template>
-  <section>test</section>
+  <main class="h-lvh">
+    <PalletteAside class="h-lvh"></PalletteAside>
+  </main>
 </template>
 
 <style scoped></style>
