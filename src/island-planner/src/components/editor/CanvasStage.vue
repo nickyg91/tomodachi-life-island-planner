@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch, shallowRef } from 'vue';
 import type { PlannerItem, ItemType } from '@/types/island';
 import Konva from 'konva';
 
@@ -12,7 +12,7 @@ const props = defineProps<{
   gridSizeName?: string;
 }>();
 
-const emits = defineEmits<{
+defineEmits<{
   (e: 'update:camera', camera: typeof props.camera): void;
   (e: 'placeItem', item: Omit<PlannerItem, 'id'>): void;
   (e: 'removeItem', itemId: string): void;
@@ -23,15 +23,15 @@ const emits = defineEmits<{
 
 // ─── State ───────────────────────────────────────────────────────────────────
 const containerRef = ref<HTMLDivElement | null>(null);
-const stageRef = ref<Konva.Stage | null>(null);
-const gridLayer = ref<Konva.Layer | null>(null);
-const itemsLayer = ref<Konva.Layer | null>(null);
-const ghostLayer = ref<Konva.Layer | null>(null);
+const stageRef = shallowRef<Konva.Stage | null>(null);
+const gridLayer = shallowRef<Konva.Layer | null>(null);
+const itemsLayer = shallowRef<Konva.Layer | null>(null);
+const ghostLayer = shallowRef<Konva.Layer | null>(null);
 const isPanning = ref(false);
 const isDragging = ref(false);
 let startPos = { x: 0, y: 0 };
 let startCamera = { x: 0, y: 0 };
-let hoverTimeout: ReturnType<typeof setTimeout> | null = null;
+const hoverTimeout: ReturnType<typeof setTimeout> | null = null;
 const GRID_SIZE_PX = computed(() => props.gridSizePx ?? 32);
 const GRID_COLORS = computed(() => ({
   bg: '#0f172a',

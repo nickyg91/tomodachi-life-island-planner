@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import AppLayout from '@/layout/AppLayout.vue';
 import PaletteSidebar from '@/components/editor/PaletteSidebar.vue';
-// import CanvasStage from '@/components/CanvasStage.vue';
+import CanvasStage from '@/components/editor/CanvasStage.vue';
 // import PropertiesPanel from '@/components/PropertiesPanel.vue';
 </script>
 <template>
@@ -12,9 +12,15 @@ import PaletteSidebar from '@/components/editor/PaletteSidebar.vue';
     </template>
 
     <!-- Center: Canvas -->
-    <!-- <template #canvas>
-      <CanvasStage />
-    </template> -->
+    <template #canvas>
+      <CanvasStage
+        :gridSize="{ w: 120, h: 90 }"
+        :camera="{ x: 0, y: 0, scale: 1 }"
+        gridSizeName="large"
+        :gridSizePx="1080"
+        :items="[]"
+      />
+    </template>
 
     <!-- Right: Properties -->
     <!-- <template #properties>
