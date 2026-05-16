@@ -20,6 +20,7 @@
     "konva": "^10.3.0",
     "pinia": "^3.0.4",
     "tailwindcss": "^4.3.0",
+    "uuid": "^14.0.0",
     "vue": "^3.5.32",
     "vue-konva": "^3.4.0",
     "vue-router": "^5.0.7"

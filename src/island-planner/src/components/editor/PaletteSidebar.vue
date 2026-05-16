@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
-import type { ItemType } from '@/types/island';
+import type { ISelectedItemType, ItemType } from '@/types/island';
 import { ITEM_CATEGORIES, VARIANT_OPTIONS, ALL_ITEM_TYPES } from '@/types/island';
 
 // Category order matters for deterministic rendering
@@ -13,10 +13,11 @@ const CATEGORY_LIST = [
   { key: 'Nature', label: 'Nature' },
   { key: 'Path', label: 'Path' },
   { key: 'Decor', label: 'Decor' },
+  { key: 'Environment', label: 'Environment' },
 ] as const;
 
 const emit = defineEmits<{
-  (e: 'itemSelect', type: ItemType, variant: string): void;
+  (e: 'itemSelect', event: ISelectedItemType): void;
   (e: 'categoryChange', category: string | null): void;
 }>();
 
@@ -54,13 +55,19 @@ watch(selectedType, (newType) => {
 const handleSelect = (type: ItemType) => {
   selectedType.value = type;
   selectedVariant.value = (VARIANT_OPTIONS[type]?.[0] || 'default') as string;
-  emit('itemSelect', type, selectedVariant.value);
+  emit('itemSelect', {
+    itemType: type,
+    variant: selectedVariant.value,
+  });
 };
 
 // Update variant and emit
 const handleVariantChange = () => {
   if (selectedType.value) {
-    emit('itemSelect', selectedType.value, selectedVariant.value);
+    emit('itemSelect', {
+      itemType: selectedType.value!,
+      variant: selectedVariant.value,
+    });
   }
 };
 

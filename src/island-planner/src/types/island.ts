@@ -11,6 +11,8 @@ export enum ItemType {
   Path = 'path',
   Tree = 'tree',
   Decor = 'decor',
+  Land = 'land',
+  Water = 'water',
 }
 
 export interface PlannerItem {
@@ -41,7 +43,8 @@ export type ItemCategory =
   | 'Landmark'
   | 'Nature'
   | 'Path'
-  | 'Decor';
+  | 'Decor'
+  | 'Environment';
 
 export const ITEM_CATEGORIES: Record<ItemType, ItemCategory> = {
   [ItemType.House]: 'Residential',
@@ -55,6 +58,8 @@ export const ITEM_CATEGORIES: Record<ItemType, ItemCategory> = {
   [ItemType.Path]: 'Path',
   [ItemType.Tree]: 'Nature',
   [ItemType.Decor]: 'Decor',
+  [ItemType.Water]: 'Environment',
+  [ItemType.Land]: 'Environment',
 } as const;
 
 export const VARIANT_OPTIONS: Partial<Record<ItemType, string[]>> = {
@@ -66,9 +71,14 @@ export const VARIANT_OPTIONS: Partial<Record<ItemType, string[]>> = {
   [ItemType.InteriorDecorationStore]: ['ikea_like', 'vintage', 'minimalist'],
   [ItemType.PhotoBooth]: ['classic', 'neon', 'nature'],
   [ItemType.PawnShop]: ['antique', 'modern', 'mystery'],
-  [ItemType.Path]: ['stone', 'wood', 'gravel'],
-  [ItemType.Tree]: ['oak', 'pine', 'cherry'],
+  [ItemType.Path]: ['stone', 'wood', 'gravel', ''],
+  [ItemType.Tree]: ['leaf', 'needle', 'palm'],
   [ItemType.Decor]: ['bench', 'lantern', 'planter', 'fountain'],
 } as const;
 
 export const ALL_ITEM_TYPES = Object.values(ItemType) as ItemType[];
+
+export interface ISelectedItemType {
+  itemType: ItemType;
+  variant: string;
+}

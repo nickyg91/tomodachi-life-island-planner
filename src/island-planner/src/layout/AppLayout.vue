@@ -3,8 +3,6 @@ import { ref } from 'vue';
 
 const isLeftOpen = ref(true);
 const isRightOpen = ref(true);
-
-defineExpose({ isLeftOpen, isRightOpen });
 </script>
 
 <template>

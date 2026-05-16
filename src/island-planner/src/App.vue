@@ -2,24 +2,24 @@
 import AppLayout from '@/layout/AppLayout.vue';
 import PaletteSidebar from '@/components/editor/PaletteSidebar.vue';
 import CanvasStage from '@/components/editor/CanvasStage.vue';
+import type { ISelectedItemType } from './types';
+import { useIslandPlannerStore } from './stores/island-planner.store';
 // import PropertiesPanel from '@/components/PropertiesPanel.vue';
+const store = useIslandPlannerStore();
+const onItemSelected = (item: ISelectedItemType) => {
+  store.setSelectedItemType(item);
+};
 </script>
 <template>
   <AppLayout>
     <!-- Left: Palette -->
     <template #palette>
-      <PaletteSidebar />
+      <PaletteSidebar @itemSelect="onItemSelected" />
     </template>
 
     <!-- Center: Canvas -->
     <template #canvas>
-      <CanvasStage
-        :gridSize="{ w: 120, h: 90 }"
-        :camera="{ x: 0, y: 0, scale: 1 }"
-        gridSizeName="large"
-        :gridSizePx="1080"
-        :items="[]"
-      />
+      <CanvasStage :gridSize="{ w: 120, h: 90 }" :camera="{ x: 60, y: 45, scale: 0 }" />
     </template>
 
     <!-- Right: Properties -->
