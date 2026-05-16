@@ -29,11 +29,20 @@ export const useIslandPlannerStore = defineStore('useIslandPlannerStore', () => 
     selectedItemType.value = item;
   };
 
+  const updateItem = (id: string) => {
+    const idx = plannerItems.value.findIndex((x) => x.id === id);
+    if (idx > -1) {
+      plannerItems.value[idx]!.type = selectedItemType.value!.itemType;
+      plannerItems.value[idx]!.variant = selectedItemType.value!.variant;
+    }
+  };
+
   return {
     plannerItems: readonly(plannerItems),
     selectedItemType: readonly(selectedItemType),
     addPlannerItem,
     removePlannerItem,
     setSelectedItemType,
+    updateItem,
   };
 });

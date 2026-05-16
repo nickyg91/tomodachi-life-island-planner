@@ -39,6 +39,9 @@ let panStartCamera = { x: 0, y: 0 };
 let wasDragged = false;
 let dragStartPos = { x: 0, y: 0 };
 
+let isPainting = false;
+let lastPlacedCell = { x: -1, y: -1 };
+
 // Hover state for the "Ghost" cursor
 const hoverPos = ref<{ x: number; y: number }>({ x: -1, y: -1 });
 const hoverTimer = ref<ReturnType<typeof setTimeout> | null>(null);
@@ -266,6 +269,7 @@ function renderAll() {
 }
 
 function handlePointerDown(e: PointerEvent) {
+  // Panning: Shift + Left Click
   if (e.shiftKey && e.button === 0) {
     isPanning.value = true;
     dragStartPos = { x: e.clientX, y: e.clientY };
@@ -275,8 +279,13 @@ function handlePointerDown(e: PointerEvent) {
     e.preventDefault();
     return;
   }
-  wasDragged = false;
-  dragStartPos = { x: e.clientX, y: e.clientY };
+
+  // Painting: Left Click
+  if (e.button === 0) {
+    isPainting = true;
+    dragStartPos = { x: e.clientX, y: e.clientY };
+    lastPlacedCell = { x: -1, y: -1 }; // Reset tracker
+  }
 }
 
 function handlePointerMove(e: PointerEvent) {
@@ -284,31 +293,29 @@ function handlePointerMove(e: PointerEvent) {
   if (isPanning.value && stageRef.value) {
     const dx = e.clientX - dragStartPos.x;
     const dy = e.clientY - dragStartPos.y;
-
-    stageRef.value.position({
-      x: panStartCamera.x + dx,
-      y: panStartCamera.y + dy,
-    });
+    stageRef.value.position({ x: panStartCamera.x + dx, y: panStartCamera.y + dy });
     stageRef.value.draw();
-
-    emit('update:camera', {
-      ...props.camera,
-      x: panStartCamera.x + dx,
-      y: panStartCamera.y + dy,
-    });
+    emit('update:camera', { ...props.camera, x: panStartCamera.x + dx, y: panStartCamera.y + dy });
     return;
   }
 
-  // Track drag distance
-  if (Math.abs(e.clientX - dragStartPos.x) > 3 || Math.abs(e.clientY - dragStartPos.y) > 3) {
-    wasDragged = true;
-  }
+  // Painting Logic
+  if (isPainting) {
+    const { x, y } = getGridCoords();
+    const isValidCell = x >= 0 && x < props.gridSize.w && y >= 0 && y < props.gridSize.h;
 
-  const { x, y } = getGridCoords();
-  if (x >= 0 && x < props.gridSize.w && y >= 0 && y < props.gridSize.h) {
-    hoverPos.value = { x, y };
-  } else {
-    hoverPos.value = { x: -1, y: -1 };
+    if (isValidCell) {
+      // Only place if we moved to a NEW cell
+      if (x !== lastPlacedCell.x || y !== lastPlacedCell.y) {
+        const item = store.plannerItems.find((i) => i.x === x && i.y === y);
+        if (!item) {
+          store.addPlannerItem(x, y);
+          lastPlacedCell = { x, y };
+        } else {
+          store.updateItem(item.id);
+        }
+      }
+    }
   }
 }
 
@@ -317,6 +324,9 @@ function handlePointerUp() {
     isPanning.value = false;
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
+  }
+  if (isPainting) {
+    isPainting = false;
   }
 }
 
@@ -383,27 +393,11 @@ function getGridCoords() {
 }
 function handleGridClick(e: Event) {
   const mouseEvent = e as MouseEvent;
-  if (wasDragged) {
-    wasDragged = false;
-    return;
-  }
-
-  const { x: gridX, y: gridY } = getGridCoords();
-
-  if (gridX < 0 || gridX >= props.gridSize.w || gridY < 0 || gridY >= props.gridSize.h) {
-    return;
-  }
-
   if (mouseEvent.button === 2) {
-    const removed = store.plannerItems.find((i) => i.x === gridX && i.y === gridY);
-    if (removed) store.removePlannerItem(removed.id);
-    return;
-  }
-
-  if (mouseEvent.button === 0) {
-    const isOccupied = store.plannerItems.some((i) => i.x === gridX && i.y === gridY);
-    if (!isOccupied) {
-      store.addPlannerItem(gridX, gridY);
+    const { x, y } = getGridCoords();
+    if (x >= 0 && x < props.gridSize.w && y >= 0 && y < props.gridSize.h) {
+      const removed = store.plannerItems.find((i) => i.x === x && i.y === y);
+      if (removed) store.removePlannerItem(removed.id);
     }
   }
 }
