@@ -368,23 +368,19 @@ function handleResize() {
 function getGridCoords() {
   if (!stageRef.value) return { x: -1, y: -1 };
 
-  // stage.getPointerPosition() returns coordinates IN STAGE SPACE
-  // (already accounts for pan/zoom)
-  const pos = stageRef.value.getPointerPosition();
-  if (!pos) return { x: -1, y: -1 };
+  const stage = stageRef.value;
+  const point = stage.getPointerPosition();
+  if (!point) return { x: -1, y: -1 };
 
-  // Convert stage pixels → world pixels
-  const scale = stageRef.value.scaleX() || 1;
-  const worldX = pos.x / scale;
-  const worldY = pos.y / scale;
+  // CRITICAL: Subtract pan offset, then divide by zoom scale
+  const rawX = (point.x - stage.x()) / stage.scaleX();
+  const rawY = (point.y - stage.y()) / stage.scaleY();
 
-  // Convert world pixels → grid indices
   return {
-    x: Math.floor(worldX / GRID_SIZE_PX.value),
-    y: Math.floor(worldY / GRID_SIZE_PX.value),
+    x: Math.floor(rawX / GRID_SIZE_PX.value),
+    y: Math.floor(rawY / GRID_SIZE_PX.value),
   };
 }
-
 function handleGridClick(e: Event) {
   const mouseEvent = e as MouseEvent;
   if (wasDragged) {
