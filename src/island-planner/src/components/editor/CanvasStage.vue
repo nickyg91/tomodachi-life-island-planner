@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, shallowRef } from 'vue';
+import { ref, computed, onMounted, onUnmounted, shallowRef, watch, nextTick } from 'vue';
 import type { PlannerItem, ItemType } from '@/types/island';
 import Konva from 'konva';
 import { useIslandPlannerStore } from '@/stores/island-planner.store';
@@ -20,7 +20,6 @@ const emit = defineEmits<{
   (e: 'update:camera', camera: typeof props.camera): void;
   (e: 'placeItem', item: Omit<PlannerItem, 'id'>): void;
   (e: 'removeItem', itemId: string): void;
-  (e: 'selectItem', item: PlannerItem | null): void;
   (e: 'itemHover', x: number, y: number, type: ItemType | null): void;
   (e: 'itemUnhover'): void;
   (e: 'resize'): void;
@@ -29,14 +28,16 @@ const emit = defineEmits<{
 // --- State ---
 const containerRef = ref<HTMLDivElement | null>(null);
 const stageRef = shallowRef<Konva.Stage | null>(null);
+const mapLayer = shallowRef<Konva.Layer | null>(null);
 const gridLayer = shallowRef<Konva.Layer | null>(null);
 const itemsLayer = shallowRef<Konva.Layer | null>(null);
-const ghostLayer = shallowRef<Konva.Layer | null>(null);
 
 const isPanning = ref<boolean>(false);
 let isDraggingItem = false;
-let startPos = { x: 0, y: 0 };
-let startCamera = { x: 0, y: 0 };
+let panStartCamera = { x: 0, y: 0 };
+
+let wasDragged = false;
+let dragStartPos = { x: 0, y: 0 };
 
 // Hover state for the "Ghost" cursor
 const hoverPos = ref<{ x: number; y: number }>({ x: -1, y: -1 });
@@ -44,15 +45,6 @@ const hoverTimer = ref<ReturnType<typeof setTimeout> | null>(null);
 
 const GRID_SIZE_PX = computed(() => props.gridSizePx ?? 32);
 
-const GRID_COLORS = computed(() => ({
-  bg: '#0f172a',
-  line: 'rgba(255, 255, 255, 1)',
-  major: 'rgba(255, 255, 255, 1)',
-  hover: 'rgba(59, 130, 246, 0.3)',
-  border: '#334155',
-}));
-
-// --- Konva Lifecycle ---
 onMounted(() => {
   if (!containerRef.value) return;
 
@@ -62,34 +54,50 @@ onMounted(() => {
     height: containerRef.value.clientHeight,
   });
 
+  // 1. Create layers
+  mapLayer.value = new Konva.Layer();
   gridLayer.value = new Konva.Layer();
   itemsLayer.value = new Konva.Layer();
-  ghostLayer.value = new Konva.Layer();
 
+  // 2. Add to stage in Z-order
   if (stageRef.value) {
+    stageRef.value.add(mapLayer.value);
     stageRef.value.add(gridLayer.value);
     stageRef.value.add(itemsLayer.value);
-    stageRef.value.add(ghostLayer.value);
     stageRef.value.draw();
   }
 
-  // Attach native DOM listeners
-  containerRef.value.addEventListener('mousedown', handleMouseDown);
-  containerRef.value.addEventListener('mousemove', handleMouseMove);
-  containerRef.value.addEventListener('mouseup', handleMouseUp);
-  containerRef.value.addEventListener('wheel', handleWheel, { passive: false });
-  containerRef.value.addEventListener('keydown', handleKeyDown);
-  containerRef.value.addEventListener('resize', handleResize);
+  // Set canvas background to water
+  if (gridLayer.value) {
+    const { w, h } = props.gridSize;
+    const size = GRID_SIZE_PX.value;
+    gridLayer.value.add(
+      new Konva.Rect({
+        width: w * size,
+        height: h * size,
+        fill: '#0f172a', // Default water color
+        listening: false,
+      }),
+    );
+  }
 
-  syncCameraToProps();
-  renderMap();
-  renderItems();
+  // Attach listeners...
+  containerRef.value.addEventListener('pointerdown', handlePointerDown);
+  window.addEventListener('pointermove', handlePointerMove);
+  window.addEventListener('pointerup', handlePointerUp);
+  containerRef.value.addEventListener('wheel', handleWheel, { passive: false });
+  window.addEventListener('keydown', handleKeyDown);
+  window.addEventListener('resize', handleResize);
+  stageRef.value.addEventListener('click', handleGridClick);
+
+  // Initial render
+  renderAll();
 });
 
 onUnmounted(() => {
-  containerRef.value?.removeEventListener('mousedown', handleMouseDown);
-  window.removeEventListener('mousemove', handleMouseMove);
-  window.removeEventListener('mouseup', handleMouseUp);
+  containerRef.value?.removeEventListener('pointerdown', handlePointerDown);
+  window.removeEventListener('pointermove', handlePointerMove);
+  window.removeEventListener('pointerup', handlePointerUp);
   containerRef.value?.removeEventListener('wheel', handleWheel);
   window.removeEventListener('keydown', handleKeyDown);
   window.removeEventListener('resize', handleResize);
@@ -97,18 +105,49 @@ onUnmounted(() => {
   if (hoverTimer.value) clearTimeout(hoverTimer.value);
 });
 
-// --- Camera Sync Helper ---
-function syncCameraToProps() {
-  if (!stageRef.value) return;
-  stageRef.value.x(props.camera.x);
-  stageRef.value.y(props.camera.y);
-  stageRef.value.scaleX(props.camera.scale);
-  stageRef.value.scaleY(props.camera.scale);
-  stageRef.value.draw();
-}
+watch(
+  () => store.plannerItems,
+  () => {
+    // Use nextTick to ensure Vue has updated any DOM refs if needed,
+    // though Konva handles its own DOM updates independently.
+    nextTick(() => renderAll());
+  },
+  { deep: true }, // Crucial for nested array changes
+);
 
 // --- Grid Rendering ---
 function renderMap() {
+  if (!mapLayer.value) return;
+  mapLayer.value.destroyChildren();
+
+  const size = GRID_SIZE_PX.value;
+
+  // Render all terrain tiles (Land & Water)
+  const terrainItems = store.plannerItems.filter(
+    (item) => item.type === 'land' || item.type === 'water',
+  );
+
+  terrainItems.forEach((tile) => {
+    // Water matches the default ocean background, Land uses variants
+    const isWater = tile.type === 'water';
+    const fillColor = isWater ? '#0f172a' : getItemColor(tile.type);
+
+    mapLayer.value?.add(
+      new Konva.Rect({
+        x: tile.x * size,
+        y: tile.y * size,
+        width: size,
+        height: size,
+        fill: fillColor,
+        listening: false, // Terrain doesn't need click events
+      }),
+    );
+  });
+
+  mapLayer.value.batchDraw();
+}
+
+function renderGrid() {
   if (!gridLayer.value || !props.showGrid) {
     if (gridLayer.value) gridLayer.value.destroyChildren();
     return;
@@ -119,13 +158,13 @@ function renderMap() {
   const size = GRID_SIZE_PX.value;
   const width = w * size;
   const height = h * size;
-  const scale = props.camera.scale || 1;
 
+  // Background for grid layer (transparent)
   gridLayer.value.add(
     new Konva.Rect({
       width,
       height,
-      fill: GRID_COLORS.value.bg,
+      fill: 'transparent',
       listening: false,
     }),
   );
@@ -134,9 +173,9 @@ function renderMap() {
     gridLayer.value.add(
       new Konva.Line({
         points: [x, 0, x, height],
-        stroke: x % (size * 5) === 0 ? GRID_COLORS.value.major : GRID_COLORS.value.line,
-        strokeWidth: 1 / scale,
-        dash: [5 / scale],
+        stroke: x % (size * 5) === 0 ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.5)',
+        strokeWidth: 1 / (props.camera.scale || 1),
+        dash: [5 / (props.camera.scale || 1)],
       }),
     );
   }
@@ -144,9 +183,9 @@ function renderMap() {
     gridLayer.value.add(
       new Konva.Line({
         points: [0, y, width, y],
-        stroke: y % (size * 5) === 0 ? GRID_COLORS.value.major : GRID_COLORS.value.line,
-        strokeWidth: 1 / scale,
-        dash: [5 / scale],
+        stroke: y % (size * 5) === 0 ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.5)',
+        strokeWidth: 1 / (props.camera.scale || 1),
+        dash: [5 / (props.camera.scale || 1)],
       }),
     );
   }
@@ -177,10 +216,15 @@ function renderItems() {
   if (!itemsLayer.value) return;
   itemsLayer.value.destroyChildren();
 
+  // Only render non-terrain items as interactive buildings
+  const buildingItems = store.plannerItems.filter(
+    (item) => item.type !== 'land' && item.type !== 'water',
+  );
+
   const size = GRID_SIZE_PX.value;
   const offset = (size - 2) / 2;
 
-  store.plannerItems.forEach((item) => {
+  buildingItems.forEach((item) => {
     const rect = new Konva.Rect({
       x: item.x * size + offset,
       y: item.y * size + offset,
@@ -206,7 +250,7 @@ function renderItems() {
     });
     rect.on('click', (e) => {
       e.cancelBubble = true;
-      emit('selectItem', item);
+      //emit('selectItem', item);
     });
 
     itemsLayer.value?.add(rect);
@@ -215,67 +259,70 @@ function renderItems() {
   itemsLayer.value.batchDraw();
 }
 
-// --- Interaction Logic ---
-function getStagePos(clientX: number, clientY: number) {
-  if (!stageRef.value) return { x: -1, y: -1 };
-  const rect = stageRef.value.container().getBoundingClientRect();
-  return {
-    x: Math.floor((clientX - rect.left - stageRef.value.x()) / GRID_SIZE_PX.value),
-    y: Math.floor((clientY - rect.top - stageRef.value.y()) / GRID_SIZE_PX.value),
-  };
+function renderAll() {
+  renderMap(); // 1. Terrain (bottom)
+  renderGrid(); // 2. Grid lines (middle)
+  renderItems(); // 3. Buildings (top)
 }
 
-// 🔧 FIXED: Uses native MouseEvent properties instead of Konva-specific ones
-function handleMouseDown(e: MouseEvent) {
-  // Middle Mouse (1) or Left Mouse (0) + Shift to pan
-  const isPanningActive = e.button === 1 || (e.button === 0 && e.shiftKey);
-
-  if (!isPanningActive) return;
-
-  isPanning.value = true;
-  startPos = { x: e.clientX, y: e.clientY };
-  startCamera = { x: stageRef.value!.x(), y: stageRef.value!.y() };
-  e.preventDefault(); // Prevents text selection & browser zoom
+function handlePointerDown(e: PointerEvent) {
+  if (e.shiftKey && e.button === 0) {
+    isPanning.value = true;
+    dragStartPos = { x: e.clientX, y: e.clientY };
+    panStartCamera = { x: stageRef.value!.x(), y: stageRef.value!.y() };
+    document.body.style.cursor = 'grabbing';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+    return;
+  }
+  wasDragged = false;
+  dragStartPos = { x: e.clientX, y: e.clientY };
 }
 
-function handleMouseMove(e: MouseEvent) {
-  // Pan Logic
+function handlePointerMove(e: PointerEvent) {
+  // Panning
   if (isPanning.value && stageRef.value) {
-    const dx = e.clientX - startPos.x;
-    const dy = e.clientY - startPos.y;
+    const dx = e.clientX - dragStartPos.x;
+    const dy = e.clientY - dragStartPos.y;
+
+    stageRef.value.position({
+      x: panStartCamera.x + dx,
+      y: panStartCamera.y + dy,
+    });
+    stageRef.value.draw();
+
     emit('update:camera', {
       ...props.camera,
-      x: startCamera.x + dx,
-      y: startCamera.y + dy,
+      x: panStartCamera.x + dx,
+      y: panStartCamera.y + dy,
     });
+    return;
   }
 
-  // Hover Logic
-  if (stageRef.value) {
-    const { x, y } = getStagePos(e.clientX, e.clientY);
+  // Track drag distance
+  if (Math.abs(e.clientX - dragStartPos.x) > 3 || Math.abs(e.clientY - dragStartPos.y) > 3) {
+    wasDragged = true;
+  }
 
-    if (hoverPos.value.x !== x || hoverPos.value.y !== y) {
-      hoverPos.value = { x, y };
-    }
-
-    if (hoverTimer.value) clearTimeout(hoverTimer.value);
-
-    if (x >= 0 && x < props.gridSize.w && y >= 0 && y < props.gridSize.h) {
-      hoverTimer.value = setTimeout(() => {
-        emit('itemHover', x, y, null);
-      }, 50);
-    }
+  const { x, y } = getGridCoords();
+  if (x >= 0 && x < props.gridSize.w && y >= 0 && y < props.gridSize.h) {
+    hoverPos.value = { x, y };
+  } else {
+    hoverPos.value = { x: -1, y: -1 };
   }
 }
 
-function handleMouseUp() {
-  isPanning.value = false;
+function handlePointerUp() {
+  if (isPanning.value) {
+    isPanning.value = false;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  }
 }
 
-function handleMouseLeave() {
-  isPanning.value = false;
+function handlePointerLeave() {
+  handlePointerUp();
   hoverPos.value = { x: -1, y: -1 };
-  emit('itemUnhover');
 }
 
 function handleWheel(e: WheelEvent) {
@@ -317,13 +364,60 @@ function handleResize() {
   stageRef.value.draw();
   renderGrid();
 }
+
+function getGridCoords() {
+  if (!stageRef.value) return { x: -1, y: -1 };
+
+  // stage.getPointerPosition() returns coordinates IN STAGE SPACE
+  // (already accounts for pan/zoom)
+  const pos = stageRef.value.getPointerPosition();
+  if (!pos) return { x: -1, y: -1 };
+
+  // Convert stage pixels → world pixels
+  const scale = stageRef.value.scaleX() || 1;
+  const worldX = pos.x / scale;
+  const worldY = pos.y / scale;
+
+  // Convert world pixels → grid indices
+  return {
+    x: Math.floor(worldX / GRID_SIZE_PX.value),
+    y: Math.floor(worldY / GRID_SIZE_PX.value),
+  };
+}
+
+function handleGridClick(e: Event) {
+  const mouseEvent = e as MouseEvent;
+  if (wasDragged) {
+    wasDragged = false;
+    return;
+  }
+
+  const { x: gridX, y: gridY } = getGridCoords();
+
+  if (gridX < 0 || gridX >= props.gridSize.w || gridY < 0 || gridY >= props.gridSize.h) {
+    return;
+  }
+
+  if (mouseEvent.button === 2) {
+    const removed = store.plannerItems.find((i) => i.x === gridX && i.y === gridY);
+    if (removed) store.removePlannerItem(removed.id);
+    return;
+  }
+
+  if (mouseEvent.button === 0) {
+    const isOccupied = store.plannerItems.some((i) => i.x === gridX && i.y === gridY);
+    if (!isOccupied) {
+      store.addPlannerItem(gridX, gridY);
+    }
+  }
+}
 </script>
 
 <template>
   <div
     ref="containerRef"
     class="w-full h-full overflow-hidden bg-neutral-950 cursor-crosshair"
-    @mouseleave="handleMouseLeave"
+    @mouseleave="handlePointerLeave"
     @contextmenu.prevent
   >
     <div
